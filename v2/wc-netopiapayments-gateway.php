@@ -397,7 +397,7 @@ class netopiapayments extends WC_Payment_Gateway {
         /**
          * Set a custom Order description
          */
-        $customPaymentDescription = 'Plata pentru comanda cu ID: '.$customer_order->get_order_number().' | '.$customer_order->payment_method_title.' | '.$customer_order->get_billing_first_name() .' '.$customer_order->get_billing_last_name();
+        $customPaymentDescription = 'Plata pentru comanda cu ID: '.$customer_order->get_order_number().' | '.$customer_order->get_payment_method_title().' | '.$customer_order->get_billing_first_name() .' '.$customer_order->get_billing_last_name();
 
         $orderData->description             = $customPaymentDescription;
         $orderData->orderID                 = $customer_order->get_order_number().'_'.$this->randomUniqueIdentifier();
@@ -467,11 +467,17 @@ class netopiapayments extends WC_Payment_Gateway {
         $resultObj = json_decode($startResult);
         
         switch($resultObj->status) {
+            case 0:
+                if(($resultObj->code == 401) && ($resultObj->data->code == 401)) {
+                    echo '<p><i style="color:red">Sa pare ca datele de authentificare introduse nu sunt corecte sau lipsesc.</i></p>';
+                } elseif (($resultObj->code == 400) && ($resultObj->data->code == 99)) {
+                    echo '<p><i style="color:red">Sa pare ca datele de POS introduse ( POS ) nu sunt corecte sau lipsesc.</i></p>';
+                }
+                echo '<script> document.getElementById("ntpRedirectMsg").innerHTML = "<i style=\'color:red\'>Imi pare rau, nu putem sa redirectionam in pagina de plata NETOPIA payments</i>";</script>';
+                echo '<p><i style="color:red">Asigura-te ca ai completat configurari in setarii,pentru mediul sandbox si live!. Citeste cu atentie instructiunile din manual!</i></p>';
+                echo '<p style="font-size:small">Ai in continuare probleme? Trimite-ne doua screenshot-uri la <a href="mailto:implementare@netopia.ro">implementare@netopia.ro</a>, unul cu setarile metodei de plata din adminul wordpress.</p>';
+            break;
             case 1:
-            // Uncomented for debugging
-            // echo "<pre>";
-            // print_r($resultObj);
-            // echo "</pre>";
             if ($resultObj->code == 200 &&  !is_null($resultObj->data->payment->paymentURL)) {
                 $parsUrl = parse_url($resultObj->data->payment->paymentURL);
                 $actionStr = $parsUrl['scheme'].'://'.$parsUrl['host'].$parsUrl['path'];
@@ -508,18 +514,16 @@ class netopiapayments extends WC_Payment_Gateway {
                                     </script>
                                 </form>';
                     } catch (\Exception $e) {
-                    echo '<p><i style="color:red">Asigura-te ca ai completat configurari in setarii,pentru mediul sandbox si live!. Citeste cu atentie instructiunile din manual!</i></p>
-                                        <p style="font-size:small">Ai in continuare probleme? Trimite-ne doua screenshot-uri la <a href="mailto:implementare@netopia.ro">implementare@netopia.ro</a>, unul cu setarile metodei de plata din adminul wordpress.</p>';
-                            }
+                        echo '<script> document.getElementById("ntpRedirectMsg").innerHTML = "<i style=\'color:red\'>Imi pare rau, nu putem sa redirectionam in pagina de plata NETOPIA payments</i>";</script>';
+                        echo '<p><i style="color:red">Asigura-te ca ai completat configurari in setarii,pentru mediul sandbox si live!. Citeste cu atentie instructiunile din manual!</i></p>';
+                        echo '<p style="font-size:small">Ai in continuare probleme? Trimite-ne doua screenshot-uri la <a href="mailto:implementare@netopia.ro">implementare@netopia.ro</a>, unul cu setarile metodei de plata din adminul wordpress.</p>';
+                    }
                 } else {
                 echo $resultObj->message;
                 }
             break;
             default:
-            // Un comented for debuging
-            // echo "<pre>";
-            // print_r($resultObj);
-            // echo "</pre>";
+            echo '<script> document.getElementById("ntpRedirectMsg").innerHTML = "<i style=\'color:red\'>Imi pare rau, nu putem sa redirectionam in pagina de plata NETOPIA payments</i>";</script>';
             echo "There is a problem, the server is not response to request or Payment URL is not generated";
             break;
         }
