@@ -1,0 +1,226 @@
+body {font-family: Arial, Helvetica, sans-serif;}
+
+
+/* Full-width input fields */
+input[type=text], input[type=password] {
+    width: 100%;
+    padding: 12px 20px;
+    margin: 8px 0;
+    display: inline-block;
+    border: 1px solid #ccc;
+    box-sizing: border-box;
+  }
+
+  /* Set a style for all buttons */
+button {
+    color: white;
+    padding: 14px 20px;
+    margin: 8px 0;
+    border: none;
+    cursor: pointer;
+  }
+  
+  button:hover {
+    opacity: 0.8;
+  }
+
+  .ntp-login-btn {
+    background-color: #2271b1;
+    width: 100%;
+  }
+
+  .ntp-confirm-btn {
+    background-color: #2271b1;
+    width: 45%;
+  }
+
+  .ntp-try-btn {
+    background-color: #2271b1;
+    width: 45%;
+  }
+
+  /* Extra styles for the cancel button */
+  .ntp-try-btn {
+    background-color: #17a2b8;
+    width: 45%;
+  }
+
+  /* Extra styles for the cancel button */
+  .ntp-close-btn {
+    background-color: #17a2b8;
+    width: 45%;
+  }
+
+  /* Extra styles for the cancel button */
+  .cancelbtn {
+    width: auto;
+    padding: 10px 18px;
+    background-color: #f44336;
+  }
+
+  /* The Close Button (x) */
+.close {
+    position: absolute;
+    right: 25px;
+    top: 0;
+    color: #000;
+    font-size: 35px;
+    font-weight: bold;
+  }
+  
+ .close:hover,
+.close:focus {
+  color: red;
+  cursor: pointer;
+}
+
+/* Center the image and position the close button */
+.imgcontainer {
+    margin: 24px 0 12px 0;
+    position: relative;
+  }
+
+  .container {
+    padding: 16px;
+  }
+  
+  .imgcontainer img {
+    padding-left:30px;
+  }
+  
+/* Add Zoom Animation */
+.animate {
+    -webkit-animation: animatezoom 0.6s;
+    animation: animatezoom 0.6s
+  }
+  
+  @-webkit-keyframes animatezoom {
+    from {-webkit-transform: scale(0)} 
+    to {-webkit-transform: scale(1)}
+  }
+    
+  @keyframes animatezoom {
+    from {transform: scale(0)} 
+    to {transform: scale(1)}
+  }
+  
+  /* Change styles for span and cancel button on extra small screens */
+  @media screen and (max-width: 300px) {
+    span.psw {
+       display: block;
+       float: none;
+    }
+    .cancelbtn {
+       width: 100%;
+    }
+  }
+
+  /* Loader */
+  @keyframes spinner {
+    0% {
+      transform: translate3d(-50%, -50%, 0) rotate(0deg);
+    }
+    100% {
+      transform: translate3d(-50%, -50%, 0) rotate(360deg);
+    }
+  }
+  .spin {
+    display: flex;
+    align-items: center;
+    justify-content: right;
+  }
+
+  .spin::before {
+    animation: 1.5s linear infinite spinner;
+    animation-play-state: inherit;
+    border: solid 5px #cfd0d1;
+    border-bottom-color: #1c87c9;
+    border-radius: 50%;
+    content: "";
+    height: 40px;
+    width: 40px;
+    position: absolute;
+    /* top: 10%;
+    left: 10%; */
+    transform: translate3d(-50%, -50%, 0);
+    will-change: transform;
+  }
+
+
+  .spin-credential {
+    display: flex;
+    align-items: center;
+    justify-content: right;
+    margin-top: 20px;
+  }
+
+  .spin-credential::before {
+    animation: 1.5s linear infinite spinner;
+    animation-play-state: inherit;
+    border: solid 5px #cfd0d1;
+    border-bottom-color: #1c87c9;
+    border-radius: 50%;
+    content: "";
+    height: 20px;
+    width: 20px;
+    position: absolute;
+    /* top: 10%;
+    left: 10%; */
+    transform: translate3d(-50%, -50%, 0);
+    will-change: transform;
+  }
+  
+
+  /* Alert Box  */
+  .alert {
+    padding: 20px;
+    background-color: #f44336;
+    color: white;
+    opacity: 1;
+    transition: opacity 0.6s;
+    margin-bottom: 15px;
+  }
+  
+  .alert.success {background-color: rgb(4,170,109,1)}
+  .alert.info {background-color: rgb(33,150,243,0.5)}
+  .alert.warning {background-color: rgb(255,152,0,1)}
+  .alert.danger {background-color: rgb(244, 67, 54,1);}
+  
+  .closebtn {
+    margin-left: 15px;
+    color: white;
+    font-weight: bold;
+    float: right;
+    font-size: 22px;
+    line-height: 20px;
+    cursor: pointer;
+    transition: 0.3s;
+  }
+  
+  .closebtn:hover {
+    color: black;
+  }
+
+
+fieldset {
+  border: 1px solid #ccc;
+  margin: 0px 0px 8px 0px;
+}
+
+.ntp-credential-list label {
+  display: block;
+}
+
+.ntp-credential-list label input{
+  margin-right: 5px;
+}
+
+.ntp-notify {
+  color: #f44336;
+}
+
+.check-mark::before {
+  content: "\2713"; /* Unicode character for check mark */
+  color: green;
+  margin-right: 5px; /* Adjust as needed for spacing */
+}
