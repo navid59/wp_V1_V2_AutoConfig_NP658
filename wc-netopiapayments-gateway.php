@@ -564,24 +564,26 @@ class netopiapayments extends WC_Payment_Gateway {
 								//processed_amount -> the processed amount at the moment of the response. It can be lower than the original amount, ie for capturing a smaller amount or for a partial credit
 								if( $order->get_status() != 'completed' ) {
 									if( $amount_paid < $amountorder_RON ) {
-										//Update the order status
-										$order->update_status('on-hold', '');
+										if($this->isAllowedToChangeStatus($order)){
+											//Update the order status
+											$order->update_status('on-hold', '');
 
-										//Error Note
-										$message = 'Thank you for shopping with us.<br />Your payment transaction was successful, but the amount paid is not the same as the total order amount.<br />Your order is currently on-hold.<br />Kindly contact us for more information regarding your order and payment status.';
-										$message_type = 'notice';
+											//Error Note
+											$message = 'Thank you for shopping with us.<br />Your payment transaction was successful, but the amount paid is not the same as the total order amount.<br />Your order is currently on-hold.<br />Kindly contact us for more information regarding your order and payment status.';
+											$message_type = 'notice';
 
-										//Add Customer Order Note
-										$order->add_order_note($message.'<br />Netopia Transaction ID: '.$transaction_id, 1);
+											//Add Customer Order Note
+											$order->add_order_note($message.'<br />Netopia Transaction ID: '.$transaction_id, 1);
 
-										//Add Admin Order Note
-										$order->add_order_note('Look into this order. <br />This order is currently on hold.<br />Reason: Amount paid is less than the total order amount.<br />Amount Paid was &#8358; '.$amount_paid.' RON while the total order amount is &#8358; '.$amountorder_RON.' RON<br />Netopia Transaction ID: '.$transaction_id);
+											//Add Admin Order Note
+											$order->add_order_note('Look into this order. <br />This order is currently on hold.<br />Reason: Amount paid is less than the total order amount.<br />Amount Paid was &#8358; '.$amount_paid.' RON while the total order amount is &#8358; '.$amountorder_RON.' RON<br />Netopia Transaction ID: '.$transaction_id);
 
-										// Reduce stock levels
-										wc_reduce_stock_levels($order->get_id());
+											// Reduce stock levels
+											wc_reduce_stock_levels($order->get_id());
 
-										// Empty cart
-										wc_empty_cart();
+											// Empty cart
+											wc_empty_cart();
+										}
 									}
 								else {
 									if( $order->get_status() == 'processing' ) {
@@ -642,37 +644,45 @@ class netopiapayments extends WC_Payment_Gateway {
 							else {}
 								break;
 							case 'paid':
-								//Update order status -> to be added, but on-hold should work for now
-								$order->update_status( 'on-hold', 'Your payment is currently being processed.' );
-								//Add admin order note
-						        $order->add_order_note('Payment remotely accepted via NETOPIA, make sure to capture it<br />Transaction ID: '.$transaction_id);
+								if($this->isAllowedToChangeStatus($order)){
+									//Update order status -> to be added, but on-hold should work for now
+									$order->update_status( 'on-hold', 'Your payment is currently being processed.' );
+									//Add admin order note
+									$order->add_order_note('Payment remotely accepted via NETOPIA, make sure to capture it<br />Transaction ID: '.$transaction_id);
+								}
 								break;	
 							case 'confirmed_pending':
-								//Update order status
-								$order->update_status( 'on-hold', 'Your payment is currently being processed.' );
-								//Add admin order note
-						        $order->add_order_note('Payment pending via NETOPIA<br />Transaction ID: '.$transaction_id);
-								break;
+								if($this->isAllowedToChangeStatus($order)){
+									//Update order status
+									$order->update_status( 'on-hold', 'Your payment is currently being processed.' );
+									//Add admin order note
+									$order->add_order_note('Payment pending via NETOPIA<br />Transaction ID: '.$transaction_id);
+									break;
+								}								
 							case 'paid_pending':
-								//Update order status
-								$order->update_status( 'on-hold', 'Your payment is currently being processed.' );
-								//Add admin order note
-						        $order->add_order_note('Payment pending via NETOPIA<br />Transaction ID: '.$transaction_id);
+								if($this->isAllowedToChangeStatus($order)){
+									//Update order status
+									$order->update_status( 'on-hold', 'Your payment is currently being processed.' );
+									//Add admin order note
+									$order->add_order_note('Payment pending via NETOPIA<br />Transaction ID: '.$transaction_id);
+								}								
 								break;
 						    case 'canceled':
-								#cand action este canceled inseamna ca tranzactia este anulata. Nu facem livrare/expediere.
-								//update DB, SET status = "canceled"
-								$errorMessage = $objPmReq->objPmNotify->errorMessage;							
+								if($this->isAllowedToChangeStatus($order)){
+									#cand action este canceled inseamna ca tranzactia este anulata. Nu facem livrare/expediere.
+									//update DB, SET status = "canceled"
+									$errorMessage = $objPmReq->objPmNotify->errorMessage;							
 
-								$message = 	'Thank you for shopping with us. <br />However, the transaction wasn\'t successful, payment wasn\'t received.';
-								//Add Customer Order Note
-			                   	$order->add_order_note($message.'<br />NETOPIA Transaction ID: '.$transaction_id, 1);
+									$message = 	'Thank you for shopping with us. <br />However, the transaction wasn\'t successful, payment wasn\'t received.';
+									//Add Customer Order Note
+									$order->add_order_note($message.'<br />NETOPIA Transaction ID: '.$transaction_id, 1);
 
-			                    //Add Admin Order Note
-			                  	$order->add_order_note($message.'<br />NETOPIA Transaction ID: '.$transaction_id);
+									//Add Admin Order Note
+									$order->add_order_note($message.'<br />NETOPIA Transaction ID: '.$transaction_id);
 
-				                //Update the order status
-								$order->update_status('cancelled', '');
+									//Update the order status
+									$order->update_status('cancelled', '');
+								}								
 							    break;
 							case 'credit':
 								#cand action este credit inseamna ca banii sunt returnati posesorului de card. Daca s-a facut deja livrare, aceasta trebuie oprita sau facut un reverse. 
@@ -710,14 +720,16 @@ class netopiapayments extends WC_Payment_Gateway {
 							    break;	
 			    		}
 					}else{
-						$order->update_status('failed', '');
+						if($this->isAllowedToChangeStatus($order)){
+							$order->update_status('failed', '');
 
-						//Error Note
-						$message = $objPmReq->objPmNotify->errorMessage;
-						if(empty($message) && isset($msg_errors[$objPmReq->objPmNotify->errorCode])) $message = $msg_errors[$objPmReq->objPmNotify->errorCode];
-						$message_type = 'error';
-						//Add Customer Order Note
-	                    $order->add_order_note($message.'<br />NETOPIA Transaction ID: '.$transaction_id, 1);
+							//Error Note
+							$message = $objPmReq->objPmNotify->errorMessage;
+							if(empty($message) && isset($msg_errors[$objPmReq->objPmNotify->errorCode])) $message = $msg_errors[$objPmReq->objPmNotify->errorCode];
+							$message_type = 'error';
+							//Add Customer Order Note
+							$order->add_order_note($message.'<br />NETOPIA Transaction ID: '.$transaction_id, 1);
+						}
 					}					
 				}catch(Exception $e)
 				{
@@ -752,6 +764,17 @@ class netopiapayments extends WC_Payment_Gateway {
 		die();
 	}
 
+	/**
+	 * Check if order status is allowed to be changed
+	 */
+	public function isAllowedToChangeStatus($orderInfo) {
+		$arrStatus = array("completed", "processing");
+		if (in_array($orderInfo->get_status(), $arrStatus)) {
+			return false;
+		}else {
+			return true;
+		}
+	}
 
 	// Check if we are forcing SSL on checkout pages
 	// Custom function not required by the Gateway
