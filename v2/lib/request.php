@@ -15,6 +15,7 @@ class Request extends Start {
             'emailTemplate' => (string) isset($configData['emailTemplate']) ? $configData['emailTemplate'] : 'confirm',
             'notifyUrl'     => (string) $configData['notifyUrl'],
             'redirectUrl'   => (string) $configData['redirectUrl'],
+            'cancelUrl'     => (string) $configData['cancelUrl'],
             'language'      => (string) isset($configData['language']) ? $configData['language'] : 'RO'
         );
         return $config;

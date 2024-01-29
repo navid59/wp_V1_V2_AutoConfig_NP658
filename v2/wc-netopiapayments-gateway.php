@@ -7,6 +7,8 @@ error_reporting(E_ALL);
 // include_once __DIR__ . '/vendor/autoload.php';
 include_once('setting/static.php');
 include_once('lib/request.php');
+include_once('lib/status.php');
+include_once('lib/staticPro.php');
 
 
 $request = new Request();
@@ -41,6 +43,7 @@ class netopiapayments extends WC_Payment_Gateway {
     public $has_fields;
     public $notify_url;
     public $envMod;
+    public $wizard_button;
 
     /**
      * Setup our Gateway's id, description and other values
@@ -90,8 +93,60 @@ class netopiapayments extends WC_Payment_Gateway {
          * In Receipt page give short info to Buyer and then will start redirecting to payment page
          */
         add_action('woocommerce_receipt_netopiapayments', array(&$this, 'receipt_page'));
+
+        /**
+		 * Get transaction status & Customeze the thank you text 
+		 */
+		add_filter('woocommerce_thankyou_order_received_text', array($this,'getNetopiaPaymentStatus_change_order_received_text'), 10, 2 );	
     }
 
+    	/**
+	 * Get transaction status & return string 
+	 */
+	public function getNetopiaPaymentStatus_change_order_received_text( $str , $order) {
+        
+		/** Return defulte woo text - do nothing */
+		if ( !$order->ID )
+        	return esc_html__($str);
+
+		$status = new Status();
+		$ntpID = get_metadata( 'post', $order->ID, '_ntpID', false );
+		$ntpTransactionID = get_metadata( 'post', $order->ID, '_ntpTransactionID', false );
+
+        
+		/**	Set status request*/
+		$status->isLive        = $this->isLive($this->environment);
+		if($status->isLive ) {
+			$status->apiKey = $this->live_api_key;						// Live API key
+		} else {
+			$status->apiKey = $this->sandbox_api_key;					// Sandbox API key
+		}
+
+		$status->posSignature	= $this->account_id;
+		$status->ntpID 			= $ntpID[0];	
+		$status->orderID 		= $ntpTransactionID[0];	
+
+		$orderStatusJson = $status->setStatus();
+
+
+		/** Get Order Status */
+		$statusRespunse = $status->getStatus($orderStatusJson);
+		$statusRespunseObj = json_decode($statusRespunse);
+
+
+		if($statusRespunseObj->code == 200) {
+			$orderStatusMsg = $this->getOrderStatusMessage($statusRespunseObj->data);
+            if($statusRespunseObj->data->error->code == "00") {
+                $new_str = $str ." ". $orderStatusMsg['errorMessage'];
+            } else {
+                $new_str = $orderStatusMsg['errorMessage'].". ". $statusRespunseObj->data->error->message;
+            }
+		} else {
+			$new_str = $str ." ". $statusRespunseObj->message;
+		}
+
+		return esc_html__($new_str);
+	}
 
     /**
      * Build the administration fields for this specific Gateway
@@ -149,7 +204,7 @@ class netopiapayments extends WC_Payment_Gateway {
                                                     'description' => __("To ensure the smooth and optimal functioning of our NETOPIA Payments wodpress plugin, it is imperative to have <br>
                                                     an active `<b>Signature</b>` and at least one `<b>API Key</b>` These fundamental components are the backbone of our plugin's capabilities.</br></br>
                                                     To get started, simply click on <b>Configuration</b> button, where you'll be prompted to enter your <b>Username</b> and <b>password</b> form NETOPIA paltform.<br>
-                                                    Once authenticated, the wizard will automatically return and configure your `<b>Signature</b>`, `<b>Livw API Key</b>` & `<b>Sandbox API Key</b>`<br><br>
+                                                    Once authenticated, the wizard will automatically return and configure your `<b>Signature</b>`, `<b>Live API Key</b>` & `<b>Sandbox API Key</b>`<br><br>
                                                     The `<b>Sandbox API Key</b>` is not obligatory but highly recommended. <br>
                                                     It serves as a virtual playground, allowing you to thoroughly test your plugin implementation before moving into a production/live environment.", 'netopiapayments' ),
                                                 );
@@ -374,7 +429,19 @@ class netopiapayments extends WC_Payment_Gateway {
             $request->apiKey = $this->sandbox_api_key;                                                  // Sandbox API key
             }
         $request->notifyUrl     = $this->notify_url;                                                    // Your IPN URL
-        $request->redirectUrl   = htmlentities(WC_Payment_Gateway::get_return_url( $customer_order ));  // Your backURL
+        
+        /**
+         * Redirect URL,
+         * Redirect the user after payment
+         * !! 3DS cases !! ??
+         */
+        $request->redirectUrl   = htmlentities(WC_Payment_Gateway::get_return_url( $customer_order )); 
+
+        /**
+         * backURL 
+         * Back to Merchant page in case of Cancellation of payment
+         */
+        $request->cancelUrl     = htmlentities(WC_Payment_Gateway::get_return_url( $customer_order )); 
 
         /**
          * Prepare json for start action
@@ -385,6 +452,7 @@ class netopiapayments extends WC_Payment_Gateway {
          'emailTemplate' => "",
          'notifyUrl'     => $request->notifyUrl,
          'redirectUrl'   => $request->redirectUrl,
+         'cancelUrl'     => $request->cancelUrl,
          'language'      => "RO"
          ];
 		
@@ -479,6 +547,10 @@ class netopiapayments extends WC_Payment_Gateway {
             break;
             case 1:
             if ($resultObj->code == 200 &&  !is_null($resultObj->data->payment->paymentURL)) {
+                // Update ntpID & TransactionID
+				update_post_meta( $customer_order->get_order_number(), '_ntpID', sanitize_text_field( $resultObj->data->payment->ntpID ) );
+				update_post_meta( $customer_order->get_order_number(), '_ntpTransactionID', sanitize_text_field( $orderData->orderID  ) );
+
                 $parsUrl = parse_url($resultObj->data->payment->paymentURL);
                 $actionStr = $parsUrl['scheme'].'://'.$parsUrl['host'].$parsUrl['path'];
                 parse_str($parsUrl['query'], $queryParams);
@@ -560,12 +632,390 @@ class netopiapayments extends WC_Payment_Gateway {
         $ipnResponse = $ntpIpn->verifyIPN();
 
         /**
+		 * Status change and payment tracking
+		 * Base on IPN response
+		 */
+        
+		if($ipnResponse['data']['orderID']) {
+			/** Get Order info */
+			$orderArr = explode("_",$ipnResponse['data']['orderID']);
+			$realOrderID = $orderArr[0];
+			$customer_order = new WC_Order( $realOrderID );
+
+			switch($ipnResponse['data']['status']) {
+				case $ntpIpn::STATUS_PAID:
+					/**
+					 * status code : 3 | it mean "PAID" ,
+					 * Certainty that the money has left from card holder's account and we update the status 
+					 *  */
+					
+						/** Base on "default_status" in configuration, the order status will be change */
+						if($this->default_status == 'processing') {
+						/** Update order status -> to processing */
+						$customer_order->update_status( 'processing', $ipnResponse['errorMessage'] );
+						$customer_order->add_order_note('Payment was received. Order status changed to "processing"', 1);
+						}else {
+						/** Update order status -> to completed */
+						$customer_order->update_status( 'completed', $ipnResponse['errorMessage'] );
+						$customer_order->add_order_note('Payment was received. Order status changed to "completed"', 1);
+						}
+
+						/** Manage downloadeable products */
+						if($customer_order->has_downloadable_item()) {
+						/** Update order status -> to completed for orders which content a downloadable product */
+						$customer_order->update_status( 'completed', $ipnResponse['errorMessage'] );
+						$customer_order->add_order_note('Order content downloadable product and status is "completed"', 1);
+						}
+
+					/** Add Note in order for tracking by wp Admin */ 
+					$customer_order->add_order_note($ipnResponse['errorMessage'].'<br />ntpID: '.$ipnResponse['data']['ntpID'], 1);
+
+						/** Verify total amount with total pay */ 
+						if (strcasecmp($ipnResponse['data']['currency'], $customer_order->get_currency()) == 0) {
+						if($ipnResponse['data']['amount'] != (float)$customer_order->get_total()) {
+							/** Update order status -> to on-hold for orders which total payment is diffrent from total order amount */
+							$customer_order->update_status( 'on-hold', "Status is changed to 'on-hold', because amount has conflict with total payment." );
+							$customer_order->add_order_note('Note: Payment is '.$ipnResponse['data']['amount'].$ipnResponse['data']['currency'].' and total order  is '.(float)$customer_order->get_total().$customer_order->get_currency(), 1);
+						    }
+						} else {
+						/** Update order status -> to on-hold for orders which payment currency is diffrent from order currency */
+						$customer_order->update_status( 'on-hold', "Status is changed to 'on-hold', because currency has conflict." );
+						$customer_order->add_order_note('Note: Payment currency is '.$ipnResponse['data']['currency'].' and order currency is '.$customer_order->get_currency(), 1);
+						}
+							
+
+					/** Change errorCode, becuse as output response for Confirmed must be null */
+					$ipnResponse['errorCode'] = null;
+					break;
+				case $ntpIpn::STATUS_CANCELED:
+					/**
+					 * status code : 4 |  it mean "CANCELED"
+					 *  */
+						/** Update the order status */
+						$customer_order->update_status('cancelled', $ipnResponse['errorMessage']);
+						$customer_order->add_order_note('Order status changed to "cancelled"', 1);
+
+					/** Add Note in order for tracking by wp Admin */ 
+					$customer_order->add_order_note($ipnResponse['errorMessage'].'<br />ntpID: '.$ipnResponse['data']['ntpID'], 1);
+					break;
+				case $ntpIpn::STATUS_CONFIRMED:
+					/**
+					 * status code : 5 | it mean "CONFIRMED" ,
+					 * Certainty that the money has left from card holder's account and we update the status 
+					 *  */
+					
+					if( $customer_order->get_status($customer_order) != 'completed' ) {
+							/** Update order status -> to completed */
+						$customer_order->update_status( 'completed', $ipnResponse['errorMessage'] );
+						$customer_order->add_order_note('Order status changed to "completed"', 1);
+					}
+
+					/** Add Note in order for tracking by wp Admin */ 
+					$customer_order->add_order_note($ipnResponse['errorMessage'].'<br />ntpID: '.$ipnResponse['data']['ntpID'], 1);
+
+					/** Change errorCode, becuse as output response for Confirmed must be null */
+					$ipnResponse['errorCode'] = null;
+					break;
+				case $ntpIpn::STATUS_PENDING :
+					/**
+					 * status code : 6 | it mean "pending status"
+					 *  */
+						/** Update the order status */
+						$customer_order->update_status('on-hold', $ipnResponse['errorMessage']);
+						$customer_order->add_order_note('Order status changed to "on-hold". payment is currently being processed.', 1);
+
+						/** Add Note in order for tracking by wp Admin */ 
+					$customer_order->add_order_note($ipnResponse['errorMessage'].'<br />ntpID: '.$ipnResponse['data']['ntpID'], 1);
+					break;
+				case $ntpIpn::STATUS_CREDIT:
+					/**
+					 * status code : 8 |  it mean "CREDIT"
+					 * To previous refunds the remaining balance put in status processing / completed
+					 * If it's full refund set it as refund status in process_refund method
+					 *  */
+					
+					if( !in_array($customer_order->get_status($customer_order), array('processing', 'completed', 'refunded')) ) {
+							/** Update the order status */
+							$customer_order->update_status('processing', $ipnResponse['errorMessage']);
+							$customer_order->add_order_note('The order has REFUNDED. SO the status changed to "processing". First check the amount  and then change the status, if is necessary', 1);
+					}
+					
+					/** Add Note in order for tracking by wp Admin */ 
+					$customer_order->add_order_note($ipnResponse['errorMessage'].'<br />ntpID: '.$ipnResponse['data']['ntpID'], 1);
+					break;
+				case $ntpIpn::STATUS_ERROR:
+					/**
+					 * status code : 11 | it mean "Payment has an error"
+					 *  */ 
+					if( $customer_order->get_status($customer_order) != 'failed' ) {
+							/** Update order status -> to Failed */
+							$customer_order->update_status( 'failed', $ipnResponse['errorMessage'] );
+							$customer_order->add_order_note('Order status changed to "failed"', 1);
+					}
+
+					/** Add Note in order for tracking by wp Admin */ 
+					$customer_order->add_order_note($ipnResponse['errorMessage'].'<br />ntpID: '.$ipnResponse['data']['ntpID'], 1);
+					break;
+				case $ntpIpn::STATUS_DECLINED:
+					/**
+					 * status code : 12 | it mean "Payment REJECTED"
+					 *  */ 
+					if( $customer_order->get_status($customer_order) != 'failed' ) {
+							/** Update order status -> to Failed */
+							$customer_order->update_status( 'failed', $ipnResponse['errorMessage'] );
+							$customer_order->add_order_note('Order status changed to "failed"', 1);
+					}
+
+					/** Add Note in order for tracking by wp Admin */ 
+					$customer_order->add_order_note($ipnResponse['errorMessage'].'<br />ntpID: '.$ipnResponse['data']['ntpID'], 1);
+					break;
+				case $ntpIpn::STATUS_FRAUD:
+					// status code : 13 | it mean "Payment in review from anti fraud"
+					/** Update order status -> to on-hold for review it*/
+					$customer_order->update_status( 'on-hold', $ipnResponse['errorMessage'] );
+					$customer_order->add_order_note('Order status changed to "on-hold", because payment need to be reviewd by anti fraud', 1);
+					
+					/** Add Note in order for tracking by wp Admin */ 
+					$customer_order->add_order_note($ipnResponse['errorMessage'].'<br />ntpID: '.$ipnResponse['data']['ntpID'], 1);
+					break;
+				case $ntpIpn::STATUS_3D_AUTH:
+					/**
+					 * status code : 13 | it mean "3DS authentication required"
+					 *  */
+					
+					/** Add Note in order for tracking by wp Admin */ 
+					$customer_order->add_order_note($ipnResponse['errorMessage'].'<br />ntpID: '.$ipnResponse['data']['ntpID'], 1);
+					break;
+				default:
+				/** Add Note in order for tracking by wp Admin */ 
+				$strTracking = 'Error Code : '.$ipnResponse['errorCode'].'<br>';
+				$strTracking .= $ipnResponse['errorMessage'].'<br />ntpID: '.$ipnResponse['data']['ntpID'];
+				$customer_order->add_order_note($strTracking, 1);
+			}
+		} else {
+			// Order ID Can not be zero / null / Empty
+		}
+
+        /**
          * IPN Output
          */
-        echo json_encode($ipnResponse);
+        // echo json_encode($ipnResponse);
+        echo json_encode([
+            "errorType" => $ipnResponse['errorType'],
+            "errorCode" => $ipnResponse['errorCode'],
+            "errorMessage" => $ipnResponse['errorMessage']
+        ]);
         die();
     }
 
+    function getOrderStatusMessage($statusResObj) {
+            $static  = new StaticPro(); 
+            switch($statusResObj->payment->status)
+                {
+                /**
+                 * +----------------------------+
+                 * | Most usable payment status |
+                 * +----------------------------+
+                 */
+                
+                case $static::STATUS_PAID: // capturate (card)
+                    /**
+                     * payment was confirmed; deliver goods
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_NONE;
+                    $outputData['errorCode'] 	= $static::STATUS_PAID;
+                    $outputData['errorMessage']	= __('The transaction was processed successfully','netopiapayments');
+                break;
+                case $static::STATUS_CANCELED: // void
+                    /**
+                     * payment was cancelled; do not deliver goods
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_CANCELED;
+                    $outputData['errorMessage']	= __('payment was cancelled; do not deliver goods','netopiapayments');
+                break;
+                case $static::STATUS_DECLINED: // declined
+                    /**
+                     * payment is declined
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_DECLINED;
+                    $outputData['errorMessage']	= __('Payment is DECLINED','netopiapayments');
+                break;
+                case $static::STATUS_FRAUD: // fraud
+                    /**
+                     * payment status is in fraud, reviw the payment
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_FRAUD;
+                    $outputData['errorMessage']	= __('Payment fraud','netopiapayments');
+                break;
+                case $static::STATUS_PENDING_AUTH: // in review
+                    /**
+                     * payment status is in reviwing
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_PENDING_AUTH;
+                    $outputData['errorMessage']	= __('Payment in reviwing','netopiapayments');
+                break;
+                case $static::STATUS_3D_AUTH:
+                    /**
+                     * In STATUS_3D_AUTH the paid purchase need to be authenticate by bank
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_3D_AUTH;
+                    $outputData['errorMessage']	= __('3D AUTH required','netopiapayments');
+                break;
+
+                /**
+                 * +-----------------------+
+                 * | Other patments status |
+                 * +-----------------------+
+                 */
+
+                case $static::STATUS_NEW:
+                    /**
+                     * STATUS_NEW
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_NONE;
+                    $outputData['errorCode']	= $static::STATUS_NEW;
+                    $outputData['errorMessage']	= __('STATUS_NEW','netopiapayments');
+                break;
+                case $static::STATUS_OPENED: // preauthorizate (card)
+                    /**
+                    * preauthorizate (card)
+                    */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_OPENED;
+                    $outputData['errorMessage']	= __('preauthorizate (card)','netopiapayments');
+                break;
+                case $static::STATUS_CONFIRMED:
+                    /**
+                     * payment was confirmed; deliver goods
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_NONE;
+                    $outputData['errorCode']	= $static::STATUS_CONFIRMED;
+                    $outputData['errorMessage']	= __('The transaction was confirmed successfully','netopiapayments');
+                break;
+                case $static::STATUS_PENDING:
+                    /**
+                    * payment in pending
+                    */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_PENDING;
+                    $outputData['errorMessage']	= __('Payment pending','netopiapayments');
+                break;
+                case $static::STATUS_SCHEDULED:
+                    /**
+                     * *!*!*!*
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_SCHEDULED;
+                    $outputData['errorMessage']	= "";
+                break;
+                case $static::STATUS_CREDIT: // capturate si apoi refund
+                    /**
+                     * a previously confirmed payment eas refinded; cancel goods delivery
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_CREDIT;
+                    $outputData['errorMessage']	= __('a previously confirmed payment was refinded; cancel goods delivery','netopiapayments');
+                break;
+                case $static::STATUS_CHARGEBACK_INIT: // chargeback initiat
+                        /**
+                     * chargeback initiat
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_CHARGEBACK_INIT;
+                    $outputData['errorMessage']	= __('chargeback initiat','netopiapayments');
+                break;
+                case $static::STATUS_CHARGEBACK_ACCEPT: // chargeback acceptat
+                    /**
+                     * *!*!*!*
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_CHARGEBACK_ACCEPT;
+                    $outputData['errorMessage']	= "";
+                break;
+                case $static::STATUS_ERROR: // error
+                    /**
+                     * payment has an error
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_ERROR;
+                    $outputData['errorMessage']	= __('Payment has an error','netopiapayments');
+                break;
+                case $static::STATUS_PENDING_AUTH: // in asteptare de verificare pentru tranzactii autorizate
+                    /**
+                     * update payment status, last modified date&time in your system
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_PENDING_AUTH;
+                    $outputData['errorMessage']	= __('specific status to authorization pending, awaiting acceptance (verify)','netopiapayments');
+                break;
+                case $static::STATUS_CHARGEBACK_REPRESENTMENT:
+                    /**
+                     * *!*!*!*
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_CHARGEBACK_REPRESENTMENT;
+                    $outputData['errorMessage']	= "";
+                break;
+                case $static::STATUS_REVERSED:
+                    /**
+                     * *!*!*!*
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_REVERSED;
+                    $outputData['errorMessage']	= "";
+                break;
+                case $static::STATUS_PENDING_ANY:
+                    /**
+                     * *!*!*!*
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_PENDING_ANY;
+                    $outputData['errorMessage']	= "";
+                break;
+                case $static::STATUS_PROGRAMMED_RECURRENT_PAYMENT:
+                    /**
+                     * *!*!*!*
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_PROGRAMMED_RECURRENT_PAYMENT;
+                    $outputData['errorMessage']	= "";
+                break;
+                case $static::STATUS_CANCELED_PROGRAMMED_RECURRENT_PAYMENT:
+                        /**
+                     * *!*!*!*
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_CANCELED_PROGRAMMED_RECURRENT_PAYMENT;
+                    $outputData['errorMessage']	= "";
+                break;
+                case $static::STATUS_TRIAL_PENDING: //specific to Model_Purchase_Sms_Online; wait for ACTON_TRIAL IPN to start trial period
+                        /**
+                     * specific to Model_Purchase_Sms_Online; wait for ACTON_TRIAL IPN to start trial period
+                     */
+                    $outputData['errorecho $statusRespunseArr->message;Type']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_TRIAL;
+                    $outputData['errorMessage']	= __('specific to Model_Purchase_Sms_Online; trial period has started','netopiapayments');
+                break;
+                case $static::STATUS_EXPIRED: //cancel a not paid purchase
+                        /**
+                     * cancel a not paid purchase
+                     */
+                    $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                    $outputData['errorCode']	= $static::STATUS_EXPIRED;
+                    $outputData['errorMessage']	= __('cancel a not payed purchase.','netopiapayments');
+                break;
+                default:
+                $outputData['errorType']	= $static::ERROR_TYPE_TEMPORARY;
+                $outputData['errorCode']	= $statusResObj->payment->status;
+                $outputData['errorMessage']	= __('Unknown','netopiapayments');
+            }
+        return $outputData;
+    }
 
     // Check if we are forcing SSL on checkout pages
     // Custom function not required by the Gateway
@@ -670,5 +1120,14 @@ class netopiapayments extends WC_Payment_Gateway {
         srand($seed);
         $randomUniqueIdentifier = md5(uniqid(rand(), true));
         return $randomUniqueIdentifier;
+    }
+
+    /**
+     * Find the real order ID on Wordpress
+     */
+    public function getRealOrderID($ntpOrderID) {
+        $expStr = explode("_", $ntpOrderID);
+        $ocOrderID = $expStr[0]; 
+        return $ocOrderID;
     }
 }

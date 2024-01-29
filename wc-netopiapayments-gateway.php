@@ -142,7 +142,7 @@ class netopiapayments extends WC_Payment_Gateway {
                                                     'description' => __("To ensure the smooth and optimal functioning of our NETOPIA Payments wodpress plugin, it is imperative to have <br>
                                                     an active `<b>Signature</b>` and at least one `<b>API Key</b>` These fundamental components are the backbone of our plugin's capabilities.</br></br>
                                                     To get started, simply click on <b>Configuration</b> button, where you'll be prompted to enter your <b>Username</b> and <b>password</b> form NETOPIA paltform.<br>
-                                                    Once authenticated, the wizard will automatically return and configure your `<b>Signature</b>`, `<b>Livw API Key</b>` & `<b>Sandbox API Key</b>`<br><br>
+                                                    Once authenticated, the wizard will automatically return and configure your `<b>Signature</b>`, `<b>Live API Key</b>` & `<b>Sandbox API Key</b>`<br><br>
                                                     The `<b>Sandbox API Key</b>` is not obligatory but highly recommended. <br>
                                                     It serves as a virtual playground, allowing you to thoroughly test your plugin implementation before moving into a production/live environment.", 'netopiapayments' ),
                                                 );

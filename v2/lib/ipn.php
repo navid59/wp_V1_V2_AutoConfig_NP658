@@ -202,13 +202,19 @@ class IPN extends Request{
                  * Decode the payload
                  */
                 $objIpn = json_decode($payload, false);
-
-                // fetch OrderId , amount & currency from request payload 
+                $ipnMsg = $objIpn->payment->message ?? ''; // Message from API, like reason of Decline
+                
+                /**
+                 * In case of Debugging 
+                 * to fetch 
+                 *  - OrderId , amount & currency from request payload 
+                 * in IPN
+                 */
                 $outputData['data']['ntpID']    = $objIpn->payment->ntpID;
                 $outputData['data']['orderID']  = $objIpn->order->orderID;
                 $outputData['data']['amount']   = $objIpn->payment->amount;
                 $outputData['data']['currency'] = $objIpn->payment->currency;
-                $outputData['data']['status'] = $objIpn->payment->status;
+                $outputData['data']['status'] = $objIpn->payment->status;       // Necessary for change status of order
                 }
             catch(\Exception $e)
                 {
@@ -228,7 +234,9 @@ class IPN extends Request{
                     /**
                      * payment was confirmed; deliver goods
                      */
-                    $outputData['errorMessage']	= "payment was paid; deliver goods";
+                    $outputData['errorType']	= self::ERROR_TYPE_NONE;
+                    $outputData['errorCode']	= null;
+                    $outputData['errorMessage']	= "payment was paid; deliver goods".$ipnMsg;
                 break;
                 case self::STATUS_CANCELED: // void
                     /**
@@ -236,7 +244,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_CANCELED;
-                    $outputData['errorMessage']	= "payment was cancelled; do not deliver goods";
+                    $outputData['errorMessage']	= "payment was cancelled; do not deliver goods. ".$ipnMsg;
                 break;
                 case self::STATUS_DECLINED: // declined
                     /**
@@ -244,7 +252,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_DECLINED;
-                    $outputData['errorMessage']	= "Payment is DECLINED";
+                    $outputData['errorMessage']	= "Payment is DECLINED. ".$ipnMsg;
                 break;
                 case self::STATUS_FRAUD: // fraud
                     /**
@@ -252,15 +260,15 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_FRAUD;
-                    $outputData['errorMessage']	= "Payment in reviwing";
+                    $outputData['errorMessage']	= "Payment in reviwing. ".$ipnMsg;
                 break;
                 case self::STATUS_PENDING_AUTH: // in review
                     /**
-                     * payment status is in reviwing
+                     * payment status is in reviwing / pendding Auth
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_PENDING_AUTH;
-                    $outputData['errorMessage']	= "Payment in reviwing";
+                    $outputData['errorMessage']	= "Payment in pendding Auth. ".$ipnMsg;
                 break;
                 case self::STATUS_3D_AUTH:
                     /**
@@ -268,7 +276,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_3D_AUTH;
-                    $outputData['errorMessage']	= "3D AUTH required";
+                    $outputData['errorMessage']	= "3D AUTH required. ".$ipnMsg;
                 break;
 
                 /**
@@ -291,13 +299,15 @@ class IPN extends Request{
                     */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_OPENED;
-                    $outputData['errorMessage']	= "preauthorizate (card)";
+                    $outputData['errorMessage']	= "preauthorizate (card). ".$ipnMsg;
                 break;
                 case self::STATUS_CONFIRMED:
                     /**
                      * payment was confirmed; deliver goods
                      */
-                    $outputData['errorMessage']	= "payment was confirmed; deliver goods";
+                    $outputData['errorType']	= self::ERROR_TYPE_NONE;
+                    $outputData['errorCode']	= null;
+                    $outputData['errorMessage']	= "payment was confirmed; deliver goods. ".$ipnMsg;
                 break;
                 case self::STATUS_PENDING:
                     /**
@@ -305,7 +315,7 @@ class IPN extends Request{
                     */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_PENDING;
-                    $outputData['errorMessage']	= "Payment pending";
+                    $outputData['errorMessage']	= "Payment pending. ".$ipnMsg;
                 break;
                 case self::STATUS_SCHEDULED:
                     /**
@@ -313,7 +323,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_SCHEDULED;
-                    $outputData['errorMessage']	= "";
+                    $outputData['errorMessage']	= $ipnMsg;
                 break;
                 case self::STATUS_CREDIT: // capturate si apoi refund
                     /**
@@ -321,7 +331,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_CREDIT;
-                    $outputData['errorMessage']	= "a previously confirmed payment was refinded; cancel goods delivery";
+                    $outputData['errorMessage']	= "a previously confirmed payment was refinded; cancel goods delivery. ".$ipnMsg;
                 break;
                 case self::STATUS_CHARGEBACK_INIT: // chargeback initiat
                      /**
@@ -329,7 +339,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_CHARGEBACK_INIT;
-                    $outputData['errorMessage']	= "chargeback initiat";
+                    $outputData['errorMessage']	= "chargeback initiat. ".$ipnMsg;
                 break;
                 case self::STATUS_CHARGEBACK_ACCEPT: // chargeback acceptat
                     /**
@@ -337,7 +347,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_CHARGEBACK_ACCEPT;
-                    $outputData['errorMessage']	= "";
+                    $outputData['errorMessage']	= $ipnMsg;
                 break;
                 case self::STATUS_ERROR: // error
                     /**
@@ -345,7 +355,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_ERROR;
-                    $outputData['errorMessage']	= "Payment has an error";
+                    $outputData['errorMessage']	= "Payment has an error. ".$ipnMsg;
                 break;
                 case self::STATUS_PENDING_AUTH: // in asteptare de verificare pentru tranzactii autorizate
                     /**
@@ -353,7 +363,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_PENDING_AUTH;
-                    $outputData['errorMessage']	= "specific status to authorization pending, awaiting acceptance (verify)";
+                    $outputData['errorMessage']	= "specific status to authorization pending, awaiting acceptance (verify). ".$ipnMsg;
                 break;
                 case self::STATUS_CHARGEBACK_REPRESENTMENT:
                     /**
@@ -361,7 +371,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_CHARGEBACK_REPRESENTMENT;
-                    $outputData['errorMessage']	= "";
+                    $outputData['errorMessage']	= $ipnMsg;
                 break;
                 case self::STATUS_REVERSED:
                     /**
@@ -369,7 +379,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_REVERSED;
-                    $outputData['errorMessage']	= "";
+                    $outputData['errorMessage']	= $ipnMsg;
                 break;
                 case self::STATUS_PENDING_ANY:
                     /**
@@ -377,7 +387,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_PENDING_ANY;
-                    $outputData['errorMessage']	= "";
+                    $outputData['errorMessage']	= $ipnMsg;
                 break;
                 case self::STATUS_PROGRAMMED_RECURRENT_PAYMENT:
                     /**
@@ -385,7 +395,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_PROGRAMMED_RECURRENT_PAYMENT;
-                    $outputData['errorMessage']	= "";
+                    $outputData['errorMessage']	= $ipnMsg;
                 break;
                 case self::STATUS_CANCELED_PROGRAMMED_RECURRENT_PAYMENT:
                      /**
@@ -393,7 +403,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_CANCELED_PROGRAMMED_RECURRENT_PAYMENT;
-                    $outputData['errorMessage']	= "";
+                    $outputData['errorMessage']	= $ipnMsg;
                 break;
                 case self::STATUS_TRIAL_PENDING: //specific to Model_Purchase_Sms_Online; wait for ACTON_TRIAL IPN to start trial period
                      /**
@@ -401,7 +411,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_TRIAL_PENDING;
-                    $outputData['errorMessage']	= "specific to Model_Purchase_Sms_Online; wait for ACTON_TRIAL IPN to start trial period";
+                    $outputData['errorMessage']	= "specific to Model_Purchase_Sms_Online; wait for ACTON_TRIAL IPN to start trial period. ".$ipnMsg;
                 break;
                 case self::STATUS_TRIAL: //specific to Model_Purchase_Sms_Online; trial period has started
                     /**
@@ -409,7 +419,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_TRIAL;
-                    $outputData['errorMessage']	= "specific to Model_Purchase_Sms_Online; trial period has started";
+                    $outputData['errorMessage']	= "specific to Model_Purchase_Sms_Online; trial period has started. ".$ipnMsg;
                 break;
                 case self::STATUS_EXPIRED: //cancel a not paid purchase
                      /**
@@ -417,12 +427,12 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_EXPIRED;
-                    $outputData['errorMessage']	= "cancel a not payed purchase ";
+                    $outputData['errorMessage']	= "cancel a not payed purchase. ".$ipnMsg;
                 break;
                 default:
                 $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                 $outputData['errorCode']	= $objIpn->payment->status;
-                $outputData['errorMessage']	= "Unknown";
+                $outputData['errorMessage']	= "Unknown ".$ipnMsg;
                 }
             
         } catch(\Exception $e)

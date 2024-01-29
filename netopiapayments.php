@@ -44,6 +44,7 @@ function netopiapayments_init() {
 
 
     if (getNtpApiVer() == 1) {
+        
         // If we made it this far, then include our Gateway Class
         include_once( 'wc-netopiapayments-gateway.php' );
         include_once( 'wc-netopiapayments-update-key.php' );
@@ -74,19 +75,22 @@ function netopiapayments_init() {
             }
     } else {
         // Api v2 Here 
-
+        
         // If we made it this far, then include our Gateway Class
         include_once( 'v2/wc-netopiapayments-gateway.php' );
         include_once( 'wc-netopiapayments-update-key.php' );
-        // include_once( 'v2/wc-netopiapayments-auth.php' );
 
         add_action( 'admin_enqueue_scripts', 'netopiapaymentsjs_init' );
         function netopiapaymentsjs_init($hook) {
+
+            
+            /**
+             *  Return if is not WooCommerce seeting page
+             */
                 if ( 'woocommerce_page_wc-settings' != $hook ) {
                     return;
                     }
 
-                
                 // Get ntp_notify_value if exist
 				$ntpNotify = '';
                 $ntpOptions = get_option( 'woocommerce_netopiapayments_settings' );
@@ -104,9 +108,108 @@ function netopiapayments_init() {
                     'ntp_notify' => $ntpNotify,
                     )
                 );
+
+                /** Add ntpID & ntpTransactionID field in Admin Order title */ 
+                add_filter( 'manage_edit-shop_order_columns', 'addNtpCustomFieldsView_order_admin_list_column' );
+                function addNtpCustomFieldsView_order_admin_list_column( $columns ) {
+                    error_log('Code is running'); // Add this line for debugging
+
+                    $columns['_ntpID'] = 'Netopia ID';
+                    $columns['_ntpTransactionID'] = 'Netopia Transaction ID';
+
+                    error_log(print_r($columns, true)); // Add this line for debugging
+
+                    return $columns;
+                }
+                
+                /** Add ntpID & ntpTransactionID field in Admin Order content */ 
+                add_action( 'manage_shop_order_posts_custom_column', 'addNtpCustomFieldsView_order_admin_list_column_content' );
+                function addNtpCustomFieldsView_order_admin_list_column_content( $column ) {
+                
+                    global $post;
+                
+                    if ( '_ntpID' === $column ) {
+                        $order = wc_get_order( $post->ID );
+                        $ntpID = get_metadata( 'post', $order->ID, '_ntpID', false );
+                        if(!empty($ntpID[0])) {
+                            echo ($ntpID[0]);
+                        }						
+                    }
+
+                    if ( '_ntpTransactionID' === $column ) {
+                        $order = wc_get_order( $post->ID );
+                        $ntpTransactionID = get_metadata( 'post', $order->ID, '_ntpTransactionID', false );
+                        if(!empty($ntpTransactionID[0])) {
+                            echo ($ntpTransactionID[0]);		
+                        }						
+                    }
+                }
+                
+
+                /** Add ntpID as custom field in order (postmeta) */
+                add_action( 'woocommerce_after_order_notes', 'ntpID_custom_checkout_field' );
+                function ntpID_custom_checkout_field( $checkout ) {
+                    woocommerce_form_field( 'ntpID', array(
+                        'type'          => 'hidden',
+                        'class'         => array(''),
+                        'label'         => __(''),
+                        'placeholder'   => __(''),
+                        ), $checkout->get_value( '_ntpID' ));
+                }
+
+                /** Add ntpTransactionID as custom field in order (postmeta) */
+                add_action( 'woocommerce_after_order_notes', 'ntpTransactionID_custom_checkout_field' );
+                function ntpTransactionID_custom_checkout_field( $checkout ) {
+                    woocommerce_form_field( 'ntpID', array(
+                        'type'          => 'hidden',
+                        'class'         => array(''),
+                        'label'         => __(''),
+                        'placeholder'   => __(''),
+                        ), $checkout->get_value( '_ntpTransactionID' ));
+                }
+
+
+                /**
+                 * Update the custom fields (ntpID & ntpTransactionID ) by defult value order meta with zero (string)
+                 */
+                add_action( 'woocommerce_checkout_update_order_meta', 'my_custom_checkout_field_update_order_meta' );
+                function my_custom_checkout_field_update_order_meta( $order_id ) {
+                        update_post_meta( $order_id, '_ntpID', sanitize_text_field( 0 ) );
+                        update_post_meta( $order_id, '_ntpTransactionID', sanitize_text_field( 0 ) );
+                }
+                
+                /** 
+                 * To customize wooCommerce "Order received" title
+                 * Add the buyer first name at title
+                 * ex. Navid, Order received
+                 * */
+                
+                add_filter( 'the_title', 'woo_personalize_order_received_title', 10, 2 );
+                function woo_personalize_order_received_title( $title, $id ) {
+                    if ( is_order_received_page() && get_the_ID() === $id ) {
+                        global $wp;
+
+                        // Get the order. Line 9 to 17 are present in order_received() in includes/shortcodes/class-wc-shortcode-checkout.php file
+                        $order_id  = apply_filters( 'woocommerce_thankyou_order_id', absint( $wp->query_vars['order-received'] ) );
+                        $order_key = apply_filters( 'woocommerce_thankyou_order_key', empty( $_GET['key'] ) ? '' : wc_clean( $_GET['key'] ) );
+
+                        if ( $order_id > 0 ) {
+                            $order = wc_get_order( $order_id );
+                            if ( $order->get_order_key() != $order_key ) {
+                                $order = false;
+                            }
+                        }
+
+                        if ( isset ( $order ) ) {
+                        $title = sprintf( "%s, ".$title, esc_html( $order->get_billing_first_name() ) );
+                        }
+                    }
+                    return $title;
+                }
         }
     }
 }
+
 
 function getAbsoulutFilePath() {
 	// Get the absolute path to the plugin directory
