@@ -79,6 +79,8 @@ class Request extends Start {
                                     'available' => [(int) 0]
                             ),
             'data'       => [
+                'plugin'    => $orderData->data->plugin,
+                'api'       => $orderData->data->api,
                 'wordpress' => $orderData->data->wordpress,
                 'wooCommerce' => $orderData->data->wooCommerce
             ]

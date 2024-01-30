@@ -331,7 +331,7 @@ class IPN extends Request{
                      */
                     $outputData['errorType']	= self::ERROR_TYPE_TEMPORARY;
                     $outputData['errorCode']	= self::STATUS_CREDIT;
-                    $outputData['errorMessage']	= "a previously confirmed payment was refinded; cancel goods delivery. ".$ipnMsg;
+                    $outputData['errorMessage']	= "a previously confirmed payment was refinded. Check the refunded amount. ".$ipnMsg;
                 break;
                 case self::STATUS_CHARGEBACK_INIT: // chargeback initiat
                      /**

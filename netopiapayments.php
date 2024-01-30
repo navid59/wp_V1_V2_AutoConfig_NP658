@@ -109,6 +109,7 @@ function netopiapayments_init() {
                     )
                 );
 
+                
                 /** Add ntpID & ntpTransactionID field in Admin Order title */ 
                 add_filter( 'manage_edit-shop_order_columns', 'addNtpCustomFieldsView_order_admin_list_column' );
                 function addNtpCustomFieldsView_order_admin_list_column( $columns ) {

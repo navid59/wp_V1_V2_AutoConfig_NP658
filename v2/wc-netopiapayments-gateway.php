@@ -8,6 +8,7 @@ error_reporting(E_ALL);
 include_once('setting/static.php');
 include_once('lib/request.php');
 include_once('lib/status.php');
+include_once('lib/refund.php');
 include_once('lib/staticPro.php');
 
 
@@ -61,6 +62,11 @@ class netopiapayments extends WC_Payment_Gateway {
         $this->envMod                 = MODE_STARTUP;
         // $this->envMod                 = MODE_NORMAL;
         
+        /** Definition the Netopia support refund */
+		$this->supports = array(
+			'products',
+			'refunds'
+		  );
 
         /**
          * Defination the plugin setting fiels in payment configuration
@@ -87,6 +93,7 @@ class netopiapayments extends WC_Payment_Gateway {
             // class will be used instead
 
             add_action('woocommerce_update_options_payment_gateways_' . $this->id, array( $this, 'process_admin_options' ) );
+
         }
 
         /**
@@ -510,9 +517,8 @@ class netopiapayments extends WC_Payment_Gateway {
 
         /**	Add Woocomerce & Wordpress version to request*/
         $orderData->data				 	= new \StdClass();
-        $orderData->data->vesion 		    = "2.0.0";
-        $orderData->data->api 		        = "2.0";
-        $orderData->data->platform 		    = "Wordpress";
+        $orderData->data->plugin 		    = $this->getPluginInfo();
+        $orderData->data->api 		        = $this->getApiInfo();
         $orderData->data->wordpress 		= $this->getWpInfo();
         $orderData->data->wooCommerce 		= $this->getWooInfo();
 
@@ -1017,6 +1023,73 @@ class netopiapayments extends WC_Payment_Gateway {
         return $outputData;
     }
 
+    public function process_refund( $order_id, $amount = null, $reason = '' ) {
+		$order = wc_get_order( $order_id );
+
+		// Check payment method
+		$payment_method = $order->get_payment_method();
+
+
+		// Check if the order is paied by other method except NetopiaPayments
+		if ( $payment_method !== 'netopiapayments' ) {
+			return false;
+		}
+
+		// check if status is 'processing', 'completed', 'refunded' do the refund otherwise should stop the refound proccess
+		if( !in_array($order->get_status(), array('processing', 'completed', 'refunded')) ) {
+			$order->add_order_note(sprintf(__( 'Refunded failed because order status is %1$s', 'netopiapayments' ), $order->get_status()));
+			$order->save();
+			return false;
+		}
+
+		// Call the refund API here
+		$refund_successful = $this->netopia_create_refund_action($order_id,$amount);
+		if ( $refund_successful ) {
+			
+			$order->add_order_note(sprintf(__( 'Refunded %1$s - %2$s', 'netopiapayments' ), wc_price( $amount ),$reason));
+			$order->save();
+			return true;
+		} else {
+			return new WP_Error( 'refund_error', __( 'Refund failed.', 'netopiapayments' ) );
+		}
+	}
+	
+	
+
+
+	/**
+	 * Function for `netopia_create_refund_action` action-hook.
+	 * This Hook will call Netopia API for refund 
+	 * @param  $ntpID 
+	 * @param  $amount  
+	 *
+	 * @return void
+	 */
+	function netopia_create_refund_action($order_id,$amount){
+		$refund = new refund();
+		$refund->posSignature 	= $this->account_id;
+		$refund->isLive       	= $this->isLive($this->environment);
+		if($refund->isLive ) {
+			$refund->apiKey 	= $this->live_api_key;						// Live API key
+		} else {
+			$refund->apiKey 	= $this->sandbox_api_key;					// Sandbox API key
+		}
+		
+		$ntpID = get_metadata( 'post', $order_id, '_ntpID', false );
+		$refund->ntpID  = $ntpID[0];
+		$refund->amount = $amount;
+		
+
+		$jsonStr = $refund->setRefundRequest();
+		$refundResult = json_decode($refund->sendRefundRequest($jsonStr));
+
+		if($refundResult->status) {
+			return true;
+		} else {
+			return false;
+		}
+	}
+
     // Check if we are forcing SSL on checkout pages
     // Custom function not required by the Gateway
     public function do_ssl_check() {
@@ -1098,6 +1171,20 @@ class netopiapayments extends WC_Payment_Gateway {
         $wooCommerce_ver = WC()->version;
         return 'Version '.$wooCommerce_ver;
     }
+
+    /**
+	 * 
+	 */
+	public function getApiInfo() {
+		return '2.0';	
+	}
+
+	/**
+	 * 
+	 */
+	public function getPluginInfo() {
+		return '2.0.0';	
+	}
 
     /**
      * 
