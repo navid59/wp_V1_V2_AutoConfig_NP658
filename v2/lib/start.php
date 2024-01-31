@@ -3,6 +3,7 @@ class Start {
     public $posSignature;
     public $notifyUrl;
     public $redirectUrl;
+    public $cancelUrl;
     public $apiKey;
     public $isLive;
     public $backUrl;

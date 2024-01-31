@@ -107,13 +107,21 @@ class netopiapayments extends WC_Payment_Gateway {
 		add_filter('woocommerce_thankyou_order_received_text', array($this,'getNetopiaPaymentStatus_change_order_received_text'), 10, 2 );	
     }
 
-    	/**
+    /**
 	 * Get transaction status & return string 
 	 */
 	public function getNetopiaPaymentStatus_change_order_received_text( $str , $order) {
         
+        /**
+         * If Payment Method is not NETOPIA Payments, 
+         * don't change the title 
+         */
+        if (WC()->session->get( 'chosen_payment_method' ) != 'netopiapayments') {
+            return;
+        }
+
 		/** Return defulte woo text - do nothing */
-		if ( !$order->ID )
+		if ( empty($order->ID) )
         	return esc_html__($str);
 
 		$status = new Status();
@@ -1183,7 +1191,7 @@ class netopiapayments extends WC_Payment_Gateway {
 	 * 
 	 */
 	public function getPluginInfo() {
-		return '2.0.0';	
+		return '1.6';	
 	}
 
     /**
